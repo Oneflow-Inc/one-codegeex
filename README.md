@@ -3,7 +3,7 @@
 
 需要Python 3.7+ / CUDA 11+ / PyTorch 1.10+ / DeepSpeed 0.6+，通过以下命令安装 ``codegeex``: 
 ```bash
-git clone git@github.com:THUDM/CodeGeeX.git
+git clone git@github.com:Oneflow-Inc/one-codegeex.git
 cd one-codegeex && git checkout import_oneflow_as_torch
 pip install cpm_kernels
 pip install -e . 
