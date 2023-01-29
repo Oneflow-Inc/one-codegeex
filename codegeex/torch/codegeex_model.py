@@ -168,7 +168,7 @@ class SelfAttention(torch.nn.Module):
                                      :attention_scores.size(3)]
 
         if context_length is not None:
-            attention_mask = torch.clone(attention_mask)
+            attention_mask = attention_mask.clone()
             attention_mask[:, :, context_length:, :] = True
 
         # attention scores and attention mask [b, np, sq, sk]
@@ -341,7 +341,7 @@ class TopQuerySelfAttention(torch.nn.Module):
                                      :attention_scores.size(3)]
 
         if context_length is not None:
-            attention_mask = torch.clone(attention_mask)
+            attention_mask = attention_mask.clone()
             attention_mask[:, :, context_length:, :] = True
 
         # attention scores and attention mask [b, np, sq, sk]

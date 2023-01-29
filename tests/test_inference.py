@@ -137,7 +137,7 @@ def main():
     if args.quantize:
         model = quantize(model, weight_bit_width=8, backend="torch")
     model.cuda()
-    
+
     with open(args.prompt_file, "r") as f:
         prompt = f.readlines()
         prompt = "".join(prompt)
