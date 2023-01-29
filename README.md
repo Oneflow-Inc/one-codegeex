@@ -11,7 +11,7 @@ pip install -e .
 
 ### 模型权重
 
-注意：目前 a100机器上有份数据，权重文件路径：/data/home/codegeex_13b.pt   25G
+注意：目前 a100机器上有份数据，权重文件路径：`/data/home/codegeex_13b.pt`   25G
 
 通过[该链接](https://models.aminer.cn/codegeex/download/request)申请权重，您将收到一个包含临时下载链接文件```urls.txt```的邮件。推荐使用[aria2](https://aria2.github.io/)通过以下命令快速下载（请保证有足够的硬盘空间存放权重（～26GB））：
 ```bash
