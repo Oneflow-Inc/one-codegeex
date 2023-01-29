@@ -2,7 +2,7 @@
 import os
 import copy
 import time
-import torch
+import oneflow as torch
 import random
 import argparse
 import numpy as np

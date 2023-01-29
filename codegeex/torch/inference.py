@@ -4,8 +4,8 @@ import os
 import time
 from typing import *
 
-import torch
-import torch.nn.functional as F
+import oneflow as torch
+import oneflow.nn.functional as F
 from dataclasses import dataclass
 
 
