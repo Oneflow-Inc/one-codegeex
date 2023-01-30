@@ -2,13 +2,13 @@
 import os
 import copy
 import time
-import torch
+import oneflow as torch
 import random
 import argparse
 import numpy as np
 
-from codegeex.torch.inference import get_token_stream
-from codegeex.torch import CodeGeeXModel
+from codegeex.oneflow.inference import get_token_stream
+from codegeex.oneflow import CodeGeeXModel
 from codegeex.tokenizer import CodeGeeXTokenizer
 from codegeex.quantization import quantize
 
