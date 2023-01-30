@@ -1,7 +1,7 @@
 import math
-import torch
-import torch.nn.functional as F
-from torch.nn.parameter import Parameter
+import oneflow as torch
+import oneflow.nn.functional as F
+from oneflow.nn.parameter import Parameter
 
 
 def fast_gelu(x):
