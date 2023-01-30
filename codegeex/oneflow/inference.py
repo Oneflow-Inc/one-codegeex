@@ -171,17 +171,24 @@ def get_token_stream(
         greedy: bool = False,
         recompute: bool = False,
 ):
+    torch._oneflow_internal.profiler.RangePush('pad_batch')
     context_tokens, context_lengths = pad_batch(context_tokens, tokenizer.eos_token_id, seq_length)
+    torch._oneflow_internal.profiler.RangePop()
 
+    torch._oneflow_internal.profiler.RangePush('get context_length')
     context_tokens_tensor = torch.cuda.LongTensor(context_tokens)
     context_length_tensor = torch.cuda.LongTensor(context_lengths)
     context_length = context_length_tensor.min().item()
+    torch._oneflow_internal.profiler.RangePop()
+    torch._oneflow_internal.profiler.RangePush('get_batch')
     tokens, attention_mask, position_ids = get_batch(
         context_tokens_tensor, 
         micro_batch_size,
         tokenizer.eos_token_id,
     )
+    torch._oneflow_internal.profiler.RangePop()
 
+    torch._oneflow_internal.profiler.RangePush('sample_sequence_batch')
     batch_token_iterator = sample_sequence_batch(
         model,
         tokenizer,
@@ -200,6 +207,7 @@ def get_token_stream(
         greedy=greedy,
         recompute=recompute,
     )
+    torch._oneflow_internal.profiler.RangePop()
 
     for tokens, lengths in batch_token_iterator:
         context_length += 1

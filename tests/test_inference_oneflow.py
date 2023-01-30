@@ -151,12 +151,15 @@ def main():
         times[out_seq_length] = []
         for prompt in [prompt]:
             t0 = time.perf_counter()
+            torch._oneflow_internal.profiler.RangePush('tokenizer.encode_code')
             tokens = tokenizer.encode_code(prompt)
+            torch._oneflow_internal.profiler.RangePop()
             print(tokens)
             print("Current prompt:")
             print(prompt)
             n_token_prompt = len(tokens)
             print("N_token_prompt:", n_token_prompt)
+            torch._oneflow_internal.profiler.RangePush('get_token_stream')
             token_stream = get_token_stream(
                 model,
                 tokenizer,
@@ -169,17 +172,23 @@ def main():
                 temperature=args.temperature,
                 greedy=args.greedy,
             )
+            torch._oneflow_internal.profiler.RangePop()
             is_finished = [False for _ in range(micro_batch_size)]
             for i, generated in enumerate(token_stream):
                 generated_tokens = generated[0]
                 for j in range(micro_batch_size):
                     if is_finished[j]:
                         continue
+                    torch._oneflow_internal.profiler.RangePush('generated_tokens[j].cpu().numpy()[-1]')
                     if generated_tokens[j].cpu().numpy()[-1] == tokenizer.eos_token_id or len(
                             generated_tokens[j]) >= out_seq_length:
                         is_finished[j] = True
+                        torch._oneflow_internal.profiler.RangePush('generated_tokens[j].cpu().numpy().tolist()')
                         generated_tokens_ = generated_tokens[j].cpu().numpy().tolist()
+                        torch._oneflow_internal.profiler.RangePop()
+                        torch._oneflow_internal.profiler.RangePush('tokenizer.decode_code')
                         generated_code = tokenizer.decode_code(generated_tokens_[n_token_prompt:])
+                        torch._oneflow_internal.profiler.RangePop()
                         generated_code = "".join(generated_code)
                         t1 = time.perf_counter()
                         print("Total generation time:", t1 - t0, "# Tokens:", len(generated_tokens_) - n_token_prompt)
@@ -187,6 +196,7 @@ def main():
                         times[out_seq_length].append(t1 - t0)
                         print("================================= Generated code:")
                         print(generated_code)
+                    torch._oneflow_internal.profiler.RangePop()
                         
                     if all(is_finished):
                         break
