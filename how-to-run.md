@@ -8,6 +8,8 @@ cd one-codegeex && git checkout import_oneflow_as_torch
 pip install -e . 
 ```
 
+源码编译 oneflow 的 `run_codegeex` 分支。
+
 ### 模型权重
 
 注意：目前 a100机器上有份数据，权重文件路径：`/data/home/codegeex_13b.pt`   25G
