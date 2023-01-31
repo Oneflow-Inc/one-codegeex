@@ -6,6 +6,8 @@ from oneflow.nn.parameter import Parameter
 
 def fast_gelu(x):
     """Mindspore's fast gelu implementation."""
+    if hasattr(torch._C, 'quick_gelu'):
+        return torch._C.quick_gelu(x)
     return x / (1 + torch.exp(-1.702 * torch.abs(x))) * torch.exp(0.851 * (x - torch.abs(x)))
 
 
