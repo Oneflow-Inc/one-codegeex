@@ -24,7 +24,8 @@ if [ -z "$PROMPT_FILE" ]; then
 fi
 
 # remove --greedy if using sampling
-CMD="python $MAIN_DIR/tests/test_inference_oneflow.py \
+# /home/zhangxiaoyu/nsight-systems-2022.4.1/bin/nsys profile --stats=false -o codegeex_oneflow_tbb.qdrep 
+CMD="python -u $MAIN_DIR/tests/test_inference_oneflow.py \
         --prompt-file $PROMPT_FILE \
         --tokenizer-path $TOKENIZER_PATH \
         --micro-batch-size 1 \
