@@ -41,12 +41,13 @@ class MLP(torch.nn.Module):
         )
 
     def forward(self, hidden_states):
+        torch._oneflow_internal.profiler.RangePush('MLP')
         # [s, b, 4hp]
         intermediate_parallel = self.dense_h_to_4h(hidden_states)
         intermediate_parallel = self.activation_func(intermediate_parallel)
         # [s, b, h]
         output = self.dense_4h_to_h(intermediate_parallel)
-
+        torch._oneflow_internal.profiler.RangePop()
         return output
     
 
@@ -98,7 +99,7 @@ class SelfAttention(torch.nn.Module):
         # =====================
         # Query, Key, and Value
         # =====================
-
+        torch._oneflow_internal.profiler.RangePush('get QKV')
         if hasattr(torch._C, 'grouped_matmul_bias'):
             query_layer, key_layer, value_layer = torch._C.grouped_matmul_bias([hidden_states, hidden_states, hidden_states], 
                                                                                 [self.query.weight, self.key.weight, self.value.weight],
@@ -107,7 +108,9 @@ class SelfAttention(torch.nn.Module):
             query_layer = self.query(hidden_states)
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
+        torch._oneflow_internal.profiler.RangePop()
 
+        torch._oneflow_internal.profiler.RangePush('transpose QKV')
         new_query_layer_shape = query_layer.size()[:-1] + \
                                 (self.num_attention_heads,
                                  self.hidden_size_per_attention_head)
@@ -122,6 +125,7 @@ class SelfAttention(torch.nn.Module):
                                 (self.num_attention_heads,
                                  self.hidden_size_per_attention_head)
         value_layer = value_layer.view(*new_query_layer_shape)
+        torch._oneflow_internal.profiler.RangePop()
 
         # ==================================
         # Adjust key and value for inference
@@ -147,14 +151,21 @@ class SelfAttention(torch.nn.Module):
                        key_layer.size(0))
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
+        torch._oneflow_internal.profiler.RangePush('query_layer.contiguous()')
         query_layer = query_layer.contiguous().view(output_size[2], output_size[0] * output_size[1], -1)
+        torch._oneflow_internal.profiler.RangePop()
+        torch._oneflow_internal.profiler.RangePush('key_layer.contiguous()')
         key_layer = key_layer.contiguous().view(output_size[3], output_size[0] * output_size[1], -1)
+        torch._oneflow_internal.profiler.RangePop()
 
         # Raw attention scores. [b * np, sq, sk]
+        torch._oneflow_internal.profiler.RangePush('matmul_result = torch.matmul')
         matmul_result = torch.matmul(query_layer.transpose(0, 1),
                                      key_layer.transpose(0, 1).transpose(1, 2)) / self.norm_factor
+        torch._oneflow_internal.profiler.RangePop()
 
         # change view to [b, np, sq, sk]
+        torch._oneflow_internal.profiler.RangePush('get attention_scores')
         attention_scores = matmul_result.view(*output_size)
 
         # ==================================================
@@ -185,6 +196,7 @@ class SelfAttention(torch.nn.Module):
             attention_probs = self.softmax(attention_scores.float()).half()
         else:
             attention_probs = self.softmax(attention_scores)
+        torch._oneflow_internal.profiler.RangePop()
 
         # =========================
         # Context layer. [sq, b, hp]
@@ -194,6 +206,7 @@ class SelfAttention(torch.nn.Module):
         # [sq, b, np, hn] --> [b, np, sq, hn]
 
         # context layer shape: [b, np, sq, hn]
+        torch._oneflow_internal.profiler.RangePush('get output')
         output_size = (value_layer.size(1),
                        value_layer.size(2),
                        query_layer.size(0),
@@ -227,7 +240,7 @@ class SelfAttention(torch.nn.Module):
 
         if get_key_value:
             output = [output, present]
-
+        torch._oneflow_internal.profiler.RangePop()
         return output
 
 
@@ -637,21 +650,25 @@ class Transformer(torch.nn.Module):
     
         if get_key_value:
             presents = []
+        torch._oneflow_internal.profiler.RangePush('for index in range(self.num_layers)')
         for index in range(self.num_layers):
             layer = self._get_layer(index)
             past = None
             if layer_past is not None:
                 past = layer_past[index]
+            torch._oneflow_internal.profiler.RangePush('layer-index')
             hidden_states = layer(hidden_states,
                                   attention_mask,
                                   layer_past=past,
                                   get_key_value=get_key_value,
                                   prompt_length=prompt_length,
                                   context_length=context_length)
+            torch._oneflow_internal.profiler.RangePop()
             if get_key_value:
                 hidden_states, present = hidden_states
                 presents.append(present)
 
+        torch._oneflow_internal.profiler.RangePop()
         # Use FP32 for Layernorm
         # hidden_states_ = self.final_layernorm(hidden_states.float()).half()
         hidden_states_ = self.final_layernorm(hidden_states)
@@ -889,11 +906,16 @@ class TransformerLanguageModel(torch.nn.Module):
     ):
 
         # Embeddings.
+        torch._oneflow_internal.profiler.RangePush('self.embedding')
         embedding_output = self.embedding(input_ids, position_ids)
+        torch._oneflow_internal.profiler.RangePop()
         query_position_ids = position_ids
+        torch._oneflow_internal.profiler.RangePush('self.topQueryEmbedding')
         queryEmbedding_out = self.topQueryEmbedding(query_position_ids)
+        torch._oneflow_internal.profiler.RangePop()
 
         # Transformer.
+        torch._oneflow_internal.profiler.RangePush('self.transformer')
         transformer_output = self.transformer(embedding_output,
                                               queryEmbedding_out,
                                               attention_mask,
@@ -901,6 +923,7 @@ class TransformerLanguageModel(torch.nn.Module):
                                               get_key_value=get_key_value,
                                               prompt_length=prompt_length,
                                               context_length=context_length)
+        torch._oneflow_internal.profiler.RangePop()
 
         return transformer_output
 
@@ -988,6 +1011,7 @@ class CodeGeeXModel(torch.nn.Module):
         context_length=None,
     ):
         # Language model.
+        torch._oneflow_internal.profiler.RangePush('self.language_model')
         lm_output = self.language_model(input_ids,
                                         position_ids,
                                         attention_mask,
@@ -995,6 +1019,7 @@ class CodeGeeXModel(torch.nn.Module):
                                         get_key_value=get_key_value,
                                         prompt_length=prompt_length,
                                         context_length=context_length)
+        torch._oneflow_internal.profiler.RangePop()
 
         if get_key_value:
             lm_output, presents = lm_output

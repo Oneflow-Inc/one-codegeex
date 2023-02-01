@@ -281,6 +281,7 @@ def sample_sequence_batch(
                         batch_size, -1)
                     positions2use = position_ids[:, context_length - 1].view(
                         batch_size, -1)
+                torch._oneflow_internal.profiler.RangePush('model forward')
                 logits, layer_past = model(tokens2use,
                                            positions2use,
                                            attention_mask,
@@ -289,6 +290,7 @@ def sample_sequence_batch(
                                            prompt_length=prompt_length,
                                            context_length=context_length,
                                            )
+                torch._oneflow_internal.profiler.RangePop()
                 logits = logits[:, -1].view(batch_size, -1).contiguous()
 
             if bad_ids is not None:
