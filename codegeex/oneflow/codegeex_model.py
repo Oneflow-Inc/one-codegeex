@@ -99,9 +99,14 @@ class SelfAttention(torch.nn.Module):
         # Query, Key, and Value
         # =====================
 
-        query_layer = self.query(hidden_states)
-        key_layer = self.key(hidden_states)
-        value_layer = self.value(hidden_states)
+        if hasattr(torch._C, 'grouped_matmul_bias'):
+            query_layer, key_layer, value_layer = torch._C.grouped_matmul_bias([hidden_states, hidden_states, hidden_states], 
+                                                                                [self.query.weight, self.key.weight, self.value.weight],
+                                                                                [self.query.bias, self.key.bias, self.value.bias])
+        else:
+            query_layer = self.query(hidden_states)
+            key_layer = self.key(hidden_states)
+            value_layer = self.value(hidden_states)
 
         new_query_layer_shape = query_layer.size()[:-1] + \
                                 (self.num_attention_heads,
@@ -272,9 +277,14 @@ class TopQuerySelfAttention(torch.nn.Module):
     ):
 
         # hidden_states: [sq, b, h]
-        query_layer = self.query(query_hidden_state)
-        key_layer = self.key(hidden_states)
-        value_layer = self.value(hidden_states)
+        if hasattr(torch._C, 'grouped_matmul_bias'):
+            query_layer, key_layer, value_layer = torch._C.grouped_matmul_bias([query_hidden_state, hidden_states, hidden_states], 
+                                                                                [self.query.weight, self.key.weight, self.value.weight],
+                                                                                [self.query.bias, self.key.bias, self.value.bias])
+        else:
+            query_layer = self.query(query_hidden_state)
+            key_layer = self.key(hidden_states)
+            value_layer = self.value(hidden_states)
 
         new_query_layer_shape = query_layer.size()[:-1] + \
                                 (self.num_attention_heads,
