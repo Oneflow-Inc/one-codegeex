@@ -191,11 +191,18 @@ class SelfAttention(torch.nn.Module):
 
         # attention scores and attention mask [b, np, sq, sk]
         # attention_scores = attention_mask_func(attention_scores, attention_mask)
-        attention_scores = attention_scores - attention_mask * 10000.0
-        if self.attention_softmax_in_fp32:
-            attention_probs = self.softmax(attention_scores.float()).half()
+        if hasattr(torch._C, 'fused_scale_mask_softmax'):
+            attention_mask = ~attention_mask
+            if self.attention_softmax_in_fp32:
+                attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
+            else:
+                attention_probs = torch._C.fused_scale_mask_softmax(attention_scores, attention_mask, fill_value=-10000.0, scale=1.0)
         else:
-            attention_probs = self.softmax(attention_scores)
+            attention_scores = attention_scores - attention_mask * 10000.0
+            if self.attention_softmax_in_fp32:
+                attention_probs = self.softmax(attention_scores.float()).half()
+            else:
+                attention_probs = self.softmax(attention_scores)
         torch._oneflow_internal.profiler.RangePop()
 
         # =========================
@@ -371,11 +378,18 @@ class TopQuerySelfAttention(torch.nn.Module):
 
         # attention scores and attention mask [b, np, sq, sk]
         # attention_scores = attention_mask_func(attention_scores, attention_mask)
-        attention_scores = attention_scores - attention_mask * 10000.0
-        if self.attention_softmax_in_fp32:
-            attention_probs = self.softmax(attention_scores.float()).half()
+        if hasattr(torch._C, 'fused_scale_mask_softmax'):
+            attention_mask = ~attention_mask
+            if self.attention_softmax_in_fp32:
+                attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
+            else:
+                attention_probs = torch._C.fused_scale_mask_softmax(attention_scores, attention_mask, fill_value=-10000.0, scale=1.0)
         else:
-            attention_probs = self.softmax(attention_scores)
+            attention_scores = attention_scores - attention_mask * 10000.0
+            if self.attention_softmax_in_fp32:
+                attention_probs = self.softmax(attention_scores.float()).half()
+            else:
+                attention_probs = self.softmax(attention_scores)
             
         # =========================
         # Context layer. [sq, b, hp]
