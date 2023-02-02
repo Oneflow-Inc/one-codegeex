@@ -92,6 +92,7 @@ class SelfAttention(torch.nn.Module):
         get_key_value=False,
         prompt_length=None,
         context_length=None,
+        layer_id=0,
     ):
         # hidden_states: [sq, b, h]
 
@@ -161,27 +162,29 @@ class SelfAttention(torch.nn.Module):
         # Update attention mask for inference. [b, np, sq, sk]
         # ==================================================
 
-        if get_key_value:
-            with torch.no_grad():
-                if layer_past is not None:
-                    attention_mask = attention_mask[
-                                     ...,
-                                     attention_scores.size(3) - 1,
-                                     :attention_scores.size(3)].unsqueeze(2)
-                else:
-                    attention_mask = attention_mask[
-                                     ...,
-                                     :attention_scores.size(3),
-                                     :attention_scores.size(3)]
+        if layer_id == 0:
+            if get_key_value:
+                with torch.no_grad():
+                    if layer_past is not None:
+                        attention_mask = attention_mask[
+                                        ...,
+                                        attention_scores.size(3) - 1,
+                                        :attention_scores.size(3)].unsqueeze(2)
+                    else:
+                        attention_mask = attention_mask[
+                                        ...,
+                                        :attention_scores.size(3),
+                                        :attention_scores.size(3)]
 
-        if context_length is not None:
-            attention_mask = torch.clone(attention_mask)
-            attention_mask[:, :, context_length:, :] = True
+            if context_length is not None:
+                attention_mask = torch.clone(attention_mask)
+                attention_mask[:, :, context_length:, :] = True
+            
+            attention_mask = ~attention_mask
 
         # attention scores and attention mask [b, np, sq, sk]
         # attention_scores = attention_mask_func(attention_scores, attention_mask)
         if hasattr(torch._C, 'fused_scale_mask_softmax'):
-            attention_mask = ~attention_mask
             if self.attention_softmax_in_fp32:
                 attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
             else:
@@ -235,7 +238,7 @@ class SelfAttention(torch.nn.Module):
         if get_key_value:
             output = [output, present]
 
-        return output
+        return output, attention_mask
 
 
 class TopQuerySelfAttention(torch.nn.Module):
@@ -469,6 +472,7 @@ class TransformerLayer(torch.nn.Module):
         get_key_value=False,
         prompt_length=None,
         context_length=None,
+        layer_id=0,
     ):
         # hidden_states: [b, s, h]
         # Use FP32 for Layernorm
@@ -476,12 +480,13 @@ class TransformerLayer(torch.nn.Module):
         layernorm_output = self.input_layernorm(hidden_states)
 
         # Self attention.
-        attention_output = self.attention(layernorm_output,
+        attention_output, attention_mask = self.attention(layernorm_output,
                                           attention_mask,
                                           layer_past=layer_past,
                                           get_key_value=get_key_value,
                                           prompt_length=prompt_length,
-                                          context_length=context_length)
+                                          context_length=context_length,
+                                          layer_id=layer_id)
 
         if get_key_value:
             attention_output, presents = attention_output
@@ -499,7 +504,7 @@ class TransformerLayer(torch.nn.Module):
         if get_key_value:
             output = [output, presents]
 
-        return output
+        return output, attention_mask
 
 
 class TopQueryLayer(torch.nn.Module):
@@ -648,7 +653,7 @@ class Transformer(torch.nn.Module):
         hidden_states = hidden_states.transpose(0, 1).contiguous()
         query_hidden_state = query_hidden_state.transpose(0, 1).contiguous()
 
-    
+        origin_attention_mask = attention_mask
         if get_key_value:
             presents = []
         for index in range(self.num_layers):
@@ -656,12 +661,13 @@ class Transformer(torch.nn.Module):
             past = None
             if layer_past is not None:
                 past = layer_past[index]
-            hidden_states = layer(hidden_states,
+            hidden_states, attention_mask = layer(hidden_states,
                                   attention_mask,
                                   layer_past=past,
                                   get_key_value=get_key_value,
                                   prompt_length=prompt_length,
-                                  context_length=context_length)
+                                  context_length=context_length,
+                                  layer_id=index)
             if get_key_value:
                 hidden_states, present = hidden_states
                 presents.append(present)
@@ -678,7 +684,7 @@ class Transformer(torch.nn.Module):
             past = layer_past[self.num_layers]
         hidden_states = self.topQueryLayer(hidden_states_,
                                            query_hidden_state,
-                                           attention_mask,
+                                           origin_attention_mask,
                                            layer_past=past,
                                            get_key_value=get_key_value,
                                            prompt_length=prompt_length,
