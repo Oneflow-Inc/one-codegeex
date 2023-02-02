@@ -2,7 +2,7 @@
 
 CHECKPOINT_PATH="/data/home/codegeex_13b.pt"
 
-MODEL_ARGS="--num-layers 39 \
+MODEL_ARGS="--num-layers 5 \
             --hidden-size 5120 \
             --num-attention-heads 40 \
             --max-position-embeddings 2048 \

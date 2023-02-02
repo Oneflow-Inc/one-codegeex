@@ -131,7 +131,7 @@ def main():
 
     print("Building CodeGeeX model ...")
     model = model_provider(args)
-    model.load_state_dict(state_dict)
+    # model.load_state_dict(state_dict)
     model.eval()
     model.half()
     if args.quantize:
