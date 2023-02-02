@@ -181,6 +181,7 @@ class SelfAttention(torch.nn.Module):
                 attention_mask[:, :, context_length:, :] = True
             
             attention_mask = ~attention_mask
+            attention_mask = attention_mask.contiguous()
 
         # attention scores and attention mask [b, np, sq, sk]
         # attention_scores = attention_mask_func(attention_scores, attention_mask)
