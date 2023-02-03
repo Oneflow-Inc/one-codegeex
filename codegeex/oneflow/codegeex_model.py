@@ -153,7 +153,7 @@ class SelfAttention(torch.nn.Module):
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.matmul(query_layer.transpose(0, 1),
-                                     key_layer.transpose(0, 1).transpose(1, 2)) / self.norm_factor
+                                     key_layer.permute(1, 2, 0)) / self.norm_factor
 
         # change view to [b, np, sq, sk]
         attention_scores = matmul_result.view(*output_size)
@@ -217,7 +217,7 @@ class SelfAttention(torch.nn.Module):
         attention_probs = attention_probs.view(output_size[0] * output_size[1],
                                                output_size[2], -1)
 
-        context_layer = torch.bmm(attention_probs, value_layer.unsqueeze(0).transpose(1, 2).squeeze(0))
+        context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
 
         # change view [b, np, sq, hn]
         context_layer = context_layer.view(*output_size)
