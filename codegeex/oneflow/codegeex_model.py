@@ -148,8 +148,8 @@ class SelfAttention(torch.nn.Module):
                        key_layer.size(0))
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
-        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
-        key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
+        query_layer = query_layer.contiguous().view(output_size[2], output_size[0] * output_size[1], -1)
+        key_layer = key_layer.contiguous().view(output_size[3], output_size[0] * output_size[1], -1)
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.matmul(query_layer.transpose(0, 1),
@@ -181,6 +181,7 @@ class SelfAttention(torch.nn.Module):
                 attention_mask[:, :, context_length:, :] = True
             
             attention_mask = ~attention_mask
+            attention_mask = attention_mask.contiguous()
 
         # attention scores and attention mask [b, np, sq, sk]
         # attention_scores = attention_mask_func(attention_scores, attention_mask)
@@ -222,7 +223,7 @@ class SelfAttention(torch.nn.Module):
         context_layer = context_layer.view(*output_size)
 
         # # [b, np, sq, hn] --> [sq, b, np, hn]
-        context_layer = context_layer.permute(2, 0, 1, 3)
+        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # # [sq, b, np, hn] --> [sq, b, hp]
         new_context_layer_shape = context_layer.size()[:-2] + \
@@ -335,12 +336,12 @@ class TopQuerySelfAttention(torch.nn.Module):
                        key_layer.size(0))
 
         # [s, b, np, hn] -> [s, b * np, hn]
-        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
-        key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
+        query_layer = query_layer.contiguous().view(output_size[2], output_size[0] * output_size[1], -1)
+        key_layer = key_layer.contiguous().view(output_size[3], output_size[0] * output_size[1], -1)
 
         # Raw attention scores. [b * np, sq, sk]
         matmul_result = torch.matmul(query_layer.transpose(0, 1),
-                                     key_layer.permute(1, 2, 0)) / self.norm_factor
+                                     key_layer.transpose(0, 1).transpose(1, 2)) / self.norm_factor
 
         # change view to [b, np, s, s]
         attention_scores = matmul_result.view(*output_size)
@@ -402,13 +403,13 @@ class TopQuerySelfAttention(torch.nn.Module):
                                                output_size[2], -1)
 
         # matmul: [b * np, sq, hn]
-        context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+        context_layer = torch.bmm(attention_probs, value_layer.unsqueeze(0).transpose(1, 2).squeeze(0))
 
         # change view [b, np, sq, hn]
         context_layer = context_layer.view(*output_size)
 
         # [b, np, sq, hn] --> [sq, b, np, hn]
-        context_layer = context_layer.permute(2, 0, 1, 3)
+        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
         new_context_layer_shape = context_layer.size()[:-2] + \
@@ -650,8 +651,8 @@ class Transformer(torch.nn.Module):
         context_length=None,
     ):
         # data format change to avoid explicit tranposes : [b s h] --> [s b h]
-        hidden_states = hidden_states.transpose(0, 1)
-        query_hidden_state = query_hidden_state.transpose(0, 1)
+        hidden_states = hidden_states.transpose(0, 1).contiguous()
+        query_hidden_state = query_hidden_state.transpose(0, 1).contiguous()
 
         origin_attention_mask = attention_mask
         if get_key_value:
@@ -695,7 +696,7 @@ class Transformer(torch.nn.Module):
             presents.append(present)
 
         # reverting data format change [s b h] --> [b s h]
-        output = hidden_states.transpose(0, 1)
+        output = hidden_states.transpose(0, 1).contiguous()
 
         if get_key_value:
             output = [output, presents]

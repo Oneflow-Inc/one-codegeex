@@ -12,7 +12,6 @@ from codegeex.oneflow import CodeGeeXModel
 from codegeex.tokenizer import CodeGeeXTokenizer
 from codegeex.quantization import quantize
 os.environ["ONEFLOW_KERNEL_ENABLE_FUSED_LINEAR"] = "1"
-os.environ["ONEFLOW_DISABLE_VIEW"] = "1"
 
 def model_provider(args):
     """Build the model."""
