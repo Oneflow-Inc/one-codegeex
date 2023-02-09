@@ -109,73 +109,48 @@ class SelfAttention(torch.nn.Module):
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
 
+        new_query_layer_shape = query_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+        query_layer = query_layer.view(*new_query_layer_shape)
+
+        new_query_layer_shape = key_layer.size()[:-1] + \
+                                (self.num_attention_heads,
+                                self.hidden_size_per_attention_head)
+        key_layer = key_layer.view(*new_query_layer_shape)
+
+        new_query_layer_shape = value_layer.size()[:-1] + \
+                                (self.num_attention_heads,
+                                self.hidden_size_per_attention_head)
+        value_layer = value_layer.view(*new_query_layer_shape)
+
+        # ==================================
+        # Adjust key and value for inference
+        # ==================================
+
+        if layer_past is not None:
+            past_key, past_value = layer_past
+            key_layer = torch.cat((past_key.type_as(key_layer),
+                                key_layer), dim=0)
+            value_layer = torch.cat((past_value.type_as(value_layer),
+                                    value_layer), dim=0)
+        if get_key_value:
+            present = (key_layer, value_layer)
+        
+        origin_query_layer = query_layer
+        origin_key_layer = key_layer
+        origin_value_layer = value_layer
+
         if hasattr(torch._C, 'fused_multi_head_attention_inference'):
             if layer_past is not None:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        query_layer, key_layer, value_layer, self.num_attention_heads, causal=True
-                )
+                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=False
+                ).transpose(0, 1)
             else:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        query_layer, key_layer, value_layer, self.num_attention_heads, causal=False
-                )
-            
-            new_query_layer_shape = query_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            query_layer = query_layer.view(*new_query_layer_shape)
-
-            new_query_layer_shape = key_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            key_layer = key_layer.view(*new_query_layer_shape)
-
-            new_query_layer_shape = value_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            value_layer = value_layer.view(*new_query_layer_shape)
-
-            # ==================================
-            # Adjust key and value for inference
-            # ==================================
-
-            if layer_past is not None:
-                past_key, past_value = layer_past
-                key_layer = torch.cat((past_key.type_as(key_layer),
-                                    key_layer), dim=0)
-                value_layer = torch.cat((past_value.type_as(value_layer),
-                                        value_layer), dim=0)
-            if get_key_value:
-                present = (key_layer, value_layer)
-
+                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=True
+                ).transpose(0, 1)
         else:
-            new_query_layer_shape = query_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            query_layer = query_layer.view(*new_query_layer_shape)
-
-            new_query_layer_shape = key_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            key_layer = key_layer.view(*new_query_layer_shape)
-
-            new_query_layer_shape = value_layer.size()[:-1] + \
-                                    (self.num_attention_heads,
-                                    self.hidden_size_per_attention_head)
-            value_layer = value_layer.view(*new_query_layer_shape)
-
-            # ==================================
-            # Adjust key and value for inference
-            # ==================================
-
-            if layer_past is not None:
-                past_key, past_value = layer_past
-                key_layer = torch.cat((past_key.type_as(key_layer),
-                                    key_layer), dim=0)
-                value_layer = torch.cat((past_value.type_as(value_layer),
-                                        value_layer), dim=0)
-            if get_key_value:
-                present = (key_layer, value_layer)
-
             # ===================================
             # Raw attention scores. [b, np, sq, sk]
             # ===================================
@@ -219,22 +194,11 @@ class SelfAttention(torch.nn.Module):
                     attention_mask = torch.clone(attention_mask)
                     attention_mask[:, :, context_length:, :] = True
                 
-                attention_mask = ~attention_mask
-                attention_mask = attention_mask.contiguous()
-
-            # attention scores and attention mask [b, np, sq, sk]
-            # attention_scores = attention_mask_func(attention_scores, attention_mask)
-            if hasattr(torch._C, 'fused_scale_mask_softmax'):
-                if self.attention_softmax_in_fp32:
-                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
-                else:
-                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores, attention_mask, fill_value=-10000.0, scale=1.0)
+            attention_scores = attention_scores - attention_mask * 10000.0
+            if self.attention_softmax_in_fp32:
+                attention_probs = self.softmax(attention_scores.float()).half()
             else:
-                attention_scores = attention_scores - attention_mask * 10000.0
-                if self.attention_softmax_in_fp32:
-                    attention_probs = self.softmax(attention_scores.float()).half()
-                else:
-                    attention_probs = self.softmax(attention_scores)
+                attention_probs = self.softmax(attention_scores)
 
             # =========================
             # Context layer. [sq, b, hp]
