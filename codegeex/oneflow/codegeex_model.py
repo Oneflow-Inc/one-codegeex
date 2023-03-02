@@ -144,11 +144,11 @@ class SelfAttention(torch.nn.Module):
         if hasattr(torch._C, 'fused_multi_head_attention_inference'):
             if layer_past is not None:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=False
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=False
                 ).transpose(0, 1)
             else:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=True
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=True
                 ).transpose(0, 1)
         else:
             # ===================================
@@ -335,11 +335,11 @@ class TopQuerySelfAttention(torch.nn.Module):
         if hasattr(torch._C, 'fused_multi_head_attention_inference'):
             if layer_past is not None:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=False
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=False
                 ).transpose(0, 1)
             else:
                 context_layer = torch._C.fused_multi_head_attention_inference(
-                        origin_query_layer.view(query_layer.size()[1], query_layer.size()[0], -1), origin_key_layer.view(key_layer.size()[1], key_layer.size()[0], -1), origin_value_layer.view(value_layer.size()[1], value_layer.size()[0], -1), self.num_attention_heads, causal=True
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=True
                 ).transpose(0, 1)
         else:
             # ===================================
