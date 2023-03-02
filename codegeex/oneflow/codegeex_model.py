@@ -109,29 +109,37 @@ class SelfAttention(torch.nn.Module):
             query_layer = self.query(hidden_states)
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
+        
+        origin_query_layer = query_layer
+        origin_key_layer = key_layer
+        origin_value_layer = value_layer
         torch._oneflow_internal.profiler.RangePop()
 
         torch._oneflow_internal.profiler.RangePush('transpose QKV')
-        new_query_layer_shape = query_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        query_layer = query_layer.view(*new_query_layer_shape)
+        if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
+        else:
+            new_query_layer_shape = query_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            query_layer = query_layer.view(*new_query_layer_shape)
 
-        new_query_layer_shape = key_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        key_layer = key_layer.view(*new_query_layer_shape)
+            new_query_layer_shape = key_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            key_layer = key_layer.view(*new_query_layer_shape)
 
-        new_query_layer_shape = value_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        value_layer = value_layer.view(*new_query_layer_shape)
+            new_query_layer_shape = value_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            value_layer = value_layer.view(*new_query_layer_shape)
         torch._oneflow_internal.profiler.RangePop()
 
         # ==================================
         # Adjust key and value for inference
         # ==================================
 
+        torch._oneflow_internal.profiler.RangePush('concat')
         if layer_past is not None:
             past_key, past_value = layer_past
             key_layer = torch.cat((past_key.type_as(key_layer),
@@ -140,16 +148,28 @@ class SelfAttention(torch.nn.Module):
                                      value_layer), dim=0)
         if get_key_value:
             present = (key_layer, value_layer)
+        
+        torch._oneflow_internal.profiler.RangePop()
 
+        # if hasattr(torch._C, 'fused_multi_head_attention_inference'):
+        #     if layer_past is not None:
+        #         context_layer = torch._C.fused_multi_head_attention_inference(
+        #                 origin_query_layer.transpose(0, 1), origin_key_layer.transpose(0, 1), origin_value_layer.transpose(0, 1), self.num_attention_heads, causal=False
+        #         ).transpose(0, 1)
+        #     else:
+        #         context_layer = torch._C.fused_multi_head_attention_inference(
+        #                 origin_query_layer.transpose(0, 1), origin_key_layer.transpose(0, 1), origin_value_layer.transpose(0, 1), self.num_attention_heads, causal=True
+        #         ).transpose(0, 1)
+        # else:
         # ===================================
         # Raw attention scores. [b, np, sq, sk]
         # ===================================
 
         # [b, np, sq, sk]
         output_size = (query_layer.size(1),
-                       query_layer.size(2),
-                       query_layer.size(0),
-                       key_layer.size(0))
+                    query_layer.size(2),
+                    query_layer.size(0),
+                    key_layer.size(0))
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
         torch._oneflow_internal.profiler.RangePush('query_layer')
@@ -162,7 +182,7 @@ class SelfAttention(torch.nn.Module):
         # Raw attention scores. [b * np, sq, sk]
         torch._oneflow_internal.profiler.RangePush('matmul_result = torch.matmul')
         matmul_result = torch.matmul(query_layer.transpose(0, 1),
-                                     key_layer.permute(1, 2, 0)) / self.norm_factor
+                                    key_layer.permute(1, 2, 0)) / self.norm_factor
         torch._oneflow_internal.profiler.RangePop()
 
         # change view to [b, np, sq, sk]
@@ -219,16 +239,16 @@ class SelfAttention(torch.nn.Module):
         # context layer shape: [b, np, sq, hn]
         torch._oneflow_internal.profiler.RangePush('get output')
         output_size = (value_layer.size(1),
-                       value_layer.size(2),
-                       query_layer.size(0),
-                       value_layer.size(3))
+                    value_layer.size(2),
+                    query_layer.size(0),
+                    value_layer.size(3))
 
         # change view [sq, b * np, hn] 
         value_layer = value_layer.view(value_layer.size(0), output_size[0] * output_size[1], -1)
 
         # change view [b * np, sq, sk]
         attention_probs = attention_probs.view(output_size[0] * output_size[1],
-                                               output_size[2], -1)
+                                            output_size[2], -1)
 
         context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
 
@@ -240,7 +260,7 @@ class SelfAttention(torch.nn.Module):
 
         # # [sq, b, np, hn] --> [sq, b, hp]
         new_context_layer_shape = context_layer.size()[:-2] + \
-                                  (self.hidden_size,)
+                                (self.hidden_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
         # =================

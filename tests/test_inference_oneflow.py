@@ -127,8 +127,8 @@ def main():
         mode="codegeex-13b")
 
     print("Loading state dict ...")
-    state_dict = torch.load(args.load, map_location="cpu")
-    state_dict = state_dict["module"]
+    # state_dict = torch.load(args.load, map_location="cpu")
+    # state_dict = state_dict["module"]
 
     print("Building CodeGeeX model ...")
     model = model_provider(args)
