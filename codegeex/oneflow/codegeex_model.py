@@ -109,20 +109,23 @@ class SelfAttention(torch.nn.Module):
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
 
-        new_query_layer_shape = query_layer.size()[:-1] + \
+        if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
+        else:
+            new_query_layer_shape = query_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+            query_layer = query_layer.view(*new_query_layer_shape)
+
+            new_query_layer_shape = key_layer.size()[:-1] + \
                                     (self.num_attention_heads,
                                     self.hidden_size_per_attention_head)
-        query_layer = query_layer.view(*new_query_layer_shape)
+            key_layer = key_layer.view(*new_query_layer_shape)
 
-        new_query_layer_shape = key_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                self.hidden_size_per_attention_head)
-        key_layer = key_layer.view(*new_query_layer_shape)
-
-        new_query_layer_shape = value_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                self.hidden_size_per_attention_head)
-        value_layer = value_layer.view(*new_query_layer_shape)
+            new_query_layer_shape = value_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            value_layer = value_layer.view(*new_query_layer_shape)
 
         # ==================================
         # Adjust key and value for inference
@@ -300,20 +303,23 @@ class TopQuerySelfAttention(torch.nn.Module):
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
 
-        new_query_layer_shape = query_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        query_layer = query_layer.view(*new_query_layer_shape)
+        if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
+        else:
+            new_query_layer_shape = query_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            query_layer = query_layer.view(*new_query_layer_shape)
 
-        new_query_layer_shape = key_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        key_layer = key_layer.view(*new_query_layer_shape)
+            new_query_layer_shape = key_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            key_layer = key_layer.view(*new_query_layer_shape)
 
-        new_query_layer_shape = value_layer.size()[:-1] + \
-                                (self.num_attention_heads,
-                                 self.hidden_size_per_attention_head)
-        value_layer = value_layer.view(*new_query_layer_shape)
+            new_query_layer_shape = value_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            value_layer = value_layer.view(*new_query_layer_shape)
 
         # ==================================
         # Adjust key and value for inference
