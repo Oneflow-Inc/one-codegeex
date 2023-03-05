@@ -1,8 +1,6 @@
 import numpy  as np
 import oneflow as torch
 
-from oneflow.nn.parameter import Parameter
-
 def _pack_int8_to_int4(x):
     np_x = x.numpy()
     l = np_x[..., 0::2]
@@ -83,7 +81,8 @@ class QuantizedLinear(torch.nn.Module):
         
         self.weight = self.weight.to(kwargs["device"])
         self.weight_scale = self.weight_scale.to(kwargs["device"])
-        self.weight_zero = self.weight_zero.to(kwargs["device"])
+        if self.weight_zero is not None:
+            self.weight_zero = self.weight_zero.to(kwargs["device"])
 
     def forward(self, input_):
         # Matrix multiply.
