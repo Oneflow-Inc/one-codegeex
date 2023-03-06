@@ -107,42 +107,6 @@ def quantize_oneflow(model, weight_bit_width):
         else:
             layer = model.language_model.transformer.layers[i]
         
-        # layer.attention.query = QuantizedLinear(
-        #     in_features=layer.attention.query.in_features,
-        #     out_features=layer.attention.query.out_features,
-        #     weight_bit_width=weight_bit_width,
-        #     weight=layer.attention.query.weight.to(torch.cuda.current_device()),
-        #     bias=layer.attention.query.bias.to(torch.cuda.current_device()),
-        #     params_dtype=torch.half,
-        #     device=layer.attention.query.weight.device,
-        # )
-        # layer.attention.value = QuantizedLinear(
-        #     in_features=layer.attention.value.in_features,
-        #     out_features=layer.attention.value.out_features,
-        #     weight_bit_width=weight_bit_width,
-        #     weight=layer.attention.value.weight.to(torch.cuda.current_device()),
-        #     bias=layer.attention.value.bias.to(torch.cuda.current_device()),
-        #     params_dtype=torch.half,
-        #     device=layer.attention.value.weight.device,
-        # )
-        # layer.attention.key = QuantizedLinear(
-        #     in_features=layer.attention.key.in_features,
-        #     out_features=layer.attention.key.out_features,
-        #     weight_bit_width=weight_bit_width,
-        #     weight=layer.attention.key.weight.to(torch.cuda.current_device()),
-        #     bias=layer.attention.key.bias.to(torch.cuda.current_device()),
-        #     params_dtype=torch.half,
-        #     device=layer.attention.key.weight.device,
-        # )
-        # layer.attention.dense = QuantizedLinear(
-        #     in_features=layer.attention.dense.in_features,
-        #     out_features=layer.attention.dense.out_features,
-        #     weight_bit_width=weight_bit_width,
-        #     weight=layer.attention.dense.weight.to(torch.cuda.current_device()),
-        #     bias=layer.attention.dense.bias.to(torch.cuda.current_device()),
-        #     params_dtype=torch.half,
-        #     device=layer.attention.dense.weight.device,
-        # )
         layer.mlp.dense_h_to_4h = QuantizedLinear(
             in_features=layer.mlp.dense_h_to_4h.in_features,
             out_features=layer.mlp.dense_h_to_4h.out_features,
