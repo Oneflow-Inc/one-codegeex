@@ -1,5 +1,6 @@
 import numpy  as np
 import oneflow as torch
+from oneflow.nn.parameter import Parameter
 
 def _pack_int8_to_int4(x):
     np_x = x.numpy()
@@ -67,22 +68,23 @@ class QuantizedLinear(torch.nn.Module):
         self.weight_bit_width = weight_bit_width
         self.symmetric = True
         self.group_dim = 1
-        self.group_size = in_features
+        self.group_size = in_features // 64
 
         self.weight, self.weight_scale, self.weight_zero = _quantize(
             self.weight_bit_width, self.symmetric, weight, self.group_dim, self.group_size, torch.int8
         )
-
         if bias is None:
             self.register_parameter('bias', None)
         else:
             self.bias = bias
             self.bias = self.bias.to(kwargs["device"])
         
-        self.weight = self.weight.to(kwargs["device"])
-        self.weight_scale = self.weight_scale.to(kwargs["device"])
+        self.weight = Parameter(self.weight.to(kwargs["device"]), requires_grad=False)
+        self.weight_scale = Parameter(self.weight_scale.to(kwargs["device"]), requires_grad=False)
+        if self.bias is not None:
+            self.bias = Parameter(self.bias.to(kwargs["device"]), requires_grad=False)
         if self.weight_zero is not None:
-            self.weight_zero = self.weight_zero.to(kwargs["device"])
+            self.weight_zero = Parameter(self.weight_zero.to(kwargs["device"]), requires_grad=False)
 
     def forward(self, input_):
         # Matrix multiply.
