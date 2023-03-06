@@ -144,6 +144,29 @@ class SelfAttention(torch.nn.Module):
         origin_key_layer = key_layer
         origin_value_layer = value_layer
 
+        if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
+            if layer_past is not None:
+                context_layer = torch._C.fused_multi_head_attention_inference_v2(
+                        query=origin_query_layer, 
+                        key=origin_key_layer, 
+                        value=origin_value_layer, 
+                        query_head_size=self.num_attention_heads, 
+                        causal=False, 
+                        query_layout="MB(HK)",
+                        key_layout="MB(HK)",
+                        value_layout="MB(HK)",
+                )
+            else:
+                context_layer = torch._C.fused_multi_head_attention_inference_v2(
+                        query=origin_query_layer, 
+                        key=origin_key_layer, 
+                        value=origin_value_layer, 
+                        query_head_size=self.num_attention_heads, 
+                        causal=True, 
+                        query_layout="MB(HK)",
+                        key_layout="MB(HK)",
+                        value_layout="MB(HK)",
+                )
         if hasattr(torch._C, 'fused_multi_head_attention_inference'):
             if layer_past is not None:
                 context_layer = torch._C.fused_multi_head_attention_inference(
