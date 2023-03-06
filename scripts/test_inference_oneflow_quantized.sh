@@ -13,7 +13,7 @@ source "$MAIN_DIR/configs/codegeex_13b.sh"
 
 # export CUDA settings
 if [ -z "$GPU" ]; then
-  GPU=0
+  GPU=1
 fi
 
 export CUDA_HOME=/usr/local/cuda-11.1/
