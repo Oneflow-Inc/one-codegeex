@@ -129,7 +129,7 @@ class SelfAttention(torch.nn.Module):
                         query_layout="MB(HK)",
                         key_layout="MB(HK)",
                         value_layout="MB(HK)",
-                )
+                ).transpose(0, 1)
             else:
                 context_layer = torch._C.fused_multi_head_attention_inference_v2(
                         query=query_layer, 
@@ -140,7 +140,7 @@ class SelfAttention(torch.nn.Module):
                         query_layout="MB(HK)",
                         key_layout="MB(HK)",
                         value_layout="MB(HK)",
-                )
+                ).transpose(0, 1)
         else:
             # ===================================
             # Raw attention scores. [b, np, sq, sk]
@@ -291,6 +291,28 @@ class TopQuerySelfAttention(torch.nn.Module):
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
 
+        if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
+        else:
+            new_query_layer_shape = query_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            query_layer = query_layer.view(*new_query_layer_shape)
+
+            new_query_layer_shape = key_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            key_layer = key_layer.view(*new_query_layer_shape)
+
+            new_query_layer_shape = value_layer.size()[:-1] + \
+                                    (self.num_attention_heads,
+                                    self.hidden_size_per_attention_head)
+            value_layer = value_layer.view(*new_query_layer_shape)
+
+        # ==================================
+        # Adjust key and value for inference
+        # ==================================
+
         if layer_past is not None:
             past_key, past_value = layer_past
             key_layer = torch.cat((past_key.type_as(key_layer),
@@ -300,32 +322,19 @@ class TopQuerySelfAttention(torch.nn.Module):
         if get_key_value:
             present = (key_layer, value_layer)
 
-        print(query_layer.shape)
-        print(key_layer.shape)
-        print(value_layer.shape)
-        if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
+        origin_query_layer = query_layer
+        origin_key_layer = key_layer
+        origin_value_layer = value_layer
+
+        if hasattr(torch._C, 'fused_multi_head_attention_inference'):
             if layer_past is not None:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.num_attention_heads, 
-                        causal=False, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                )
+                context_layer = torch._C.fused_multi_head_attention_inference(
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=False
+                ).transpose(0, 1)
             else:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.num_attention_heads, 
-                        causal=True, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                )
+                context_layer = torch._C.fused_multi_head_attention_inference(
+                        origin_query_layer.view(query_layer.size()[0], query_layer.size()[1], -1).transpose(0, 1), origin_key_layer.view(key_layer.size()[0], key_layer.size()[1], -1).transpose(0, 1), origin_value_layer.view(value_layer.size()[0], value_layer.size()[1], -1).transpose(0, 1), self.num_attention_heads, causal=True
+                ).transpose(0, 1)
         else:
             # ===================================
             # Raw attention scores. [b, np, sq, sk]
