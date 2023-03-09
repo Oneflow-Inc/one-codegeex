@@ -2,7 +2,7 @@ import math
 import oneflow as torch
 import oneflow.nn.functional as F
 from oneflow.nn.parameter import Parameter
-
+from ..quantization import QuantizedLinear
 
 def fast_gelu(x):
     """Mindspore's fast gelu implementation."""
@@ -98,7 +98,7 @@ class SelfAttention(torch.nn.Module):
         # Query, Key, and Value
         # =====================
 
-        if hasattr(torch._C, 'grouped_matmul_bias'):
+        if hasattr(torch._C, 'grouped_matmul_bias') and not isinstance(self.query, QuantizedLinear):
             query_layer, key_layer, value_layer = torch._C.grouped_matmul_bias([hidden_states, hidden_states, hidden_states], 
                                                                                 [self.query.weight, self.key.weight, self.value.weight],
                                                                                 [self.query.bias, self.key.bias, self.value.bias])
@@ -314,7 +314,7 @@ class TopQuerySelfAttention(torch.nn.Module):
     ):
 
         # hidden_states: [sq, b, h]
-        if hasattr(torch._C, 'grouped_matmul_bias'):
+        if hasattr(torch._C, 'grouped_matmul_bias') and not isinstance(self.query, QuantizedLinear):
             query_layer, key_layer, value_layer = torch._C.grouped_matmul_bias([query_hidden_state, hidden_states, hidden_states], 
                                                                                 [self.query.weight, self.key.weight, self.value.weight],
                                                                                 [self.query.bias, self.key.bias, self.value.bias])
