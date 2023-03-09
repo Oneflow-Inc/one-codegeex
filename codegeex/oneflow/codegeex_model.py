@@ -106,40 +106,41 @@ class SelfAttention(torch.nn.Module):
             query_layer = self.query(hidden_states)
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
-
-        if layer_past is not None:
-            past_key, past_value = layer_past
-            key_layer = torch.cat((past_key.type_as(key_layer),
-                                key_layer), dim=0)
-            value_layer = torch.cat((past_value.type_as(value_layer),
-                                    value_layer), dim=0)
-        if get_key_value:
-            present = (key_layer, value_layer)
         
-        if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
-            if layer_past is not None:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.hidden_size_per_attention_head, 
-                        causal=False, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                ).transpose(0, 1)
+        fallback = not hasattr(torch._C, 'fused_multi_head_attention_inference_v2')
+
+        if fallback:
+            if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+                query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
             else:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.hidden_size_per_attention_head, 
-                        causal=True, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                ).transpose(0, 1)
-        else:
+                new_query_layer_shape = query_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                query_layer = query_layer.view(*new_query_layer_shape)
+
+                new_query_layer_shape = key_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                key_layer = key_layer.view(*new_query_layer_shape)
+
+                new_query_layer_shape = value_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                value_layer = value_layer.view(*new_query_layer_shape)
+
+            # ==================================
+            # Adjust key and value for inference
+            # ==================================
+
+            if layer_past is not None:
+                past_key, past_value = layer_past
+                key_layer = torch.cat((past_key.type_as(key_layer),
+                                    key_layer), dim=0)
+                value_layer = torch.cat((past_value.type_as(value_layer),
+                                        value_layer), dim=0)
+            if get_key_value:
+                present = (key_layer, value_layer)
+
             # ===================================
             # Raw attention scores. [b, np, sq, sk]
             # ===================================
@@ -156,7 +157,7 @@ class SelfAttention(torch.nn.Module):
 
             # Raw attention scores. [b * np, sq, sk]
             matmul_result = torch.matmul(query_layer.transpose(0, 1),
-                                        key_layer.permute(1, 2, 0)) / self.norm_factor
+                                        key_layer.transpose(0, 1).transpose(1, 2)) / self.norm_factor
 
             # change view to [b, np, sq, sk]
             attention_scores = matmul_result.view(*output_size)
@@ -183,11 +184,22 @@ class SelfAttention(torch.nn.Module):
                     attention_mask = torch.clone(attention_mask)
                     attention_mask[:, :, context_length:, :] = True
                 
-            attention_scores = attention_scores - attention_mask * 10000.0
-            if self.attention_softmax_in_fp32:
-                attention_probs = self.softmax(attention_scores.float()).half()
+                attention_mask = ~attention_mask
+                attention_mask = attention_mask.contiguous()
+
+            # attention scores and attention mask [b, np, sq, sk]
+            # attention_scores = attention_mask_func(attention_scores, attention_mask)
+            if hasattr(torch._C, 'fused_scale_mask_softmax'):
+                if self.attention_softmax_in_fp32:
+                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
+                else:
+                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores, attention_mask, fill_value=-10000.0, scale=1.0)
             else:
-                attention_probs = self.softmax(attention_scores)
+                attention_scores = attention_scores - attention_mask * 10000.0
+                if self.attention_softmax_in_fp32:
+                    attention_probs = self.softmax(attention_scores.float()).half()
+                else:
+                    attention_probs = self.softmax(attention_scores)
 
             # =========================
             # Context layer. [sq, b, hp]
@@ -209,7 +221,7 @@ class SelfAttention(torch.nn.Module):
             attention_probs = attention_probs.view(output_size[0] * output_size[1],
                                                 output_size[2], -1)
 
-            context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
+            context_layer = torch.bmm(attention_probs, value_layer.unsqueeze(0).transpose(1, 2).squeeze(0))
 
             # change view [b, np, sq, hn]
             context_layer = context_layer.view(*output_size)
@@ -221,10 +233,33 @@ class SelfAttention(torch.nn.Module):
             new_context_layer_shape = context_layer.size()[:-2] + \
                                     (self.hidden_size,)
             context_layer = context_layer.view(*new_context_layer_shape)
+        else:
+            if layer_past is not None:
+                past_key, past_value = layer_past
+                key_layer = torch.cat((past_key.type_as(key_layer),
+                                    key_layer), dim=0)
+                value_layer = torch.cat((past_value.type_as(value_layer),
+                                        value_layer), dim=0)
+            if get_key_value:
+                present = (key_layer, value_layer)
+            
+            context_layer = torch._C.fused_multi_head_attention_inference_v2(
+                        query=query_layer, 
+                        key=key_layer, 
+                        value=value_layer, 
+                        query_head_size=self.hidden_size_per_attention_head, 
+                        causal=True, 
+                        causal_diagonal_offset=key_layer.shape[0]-query_layer.shape[0],
+                        query_layout="MB(HK)",
+                        key_layout="MB(HK)",
+                        value_layout="MB(HK)",
+                        output_layout="MB(HK)",
+                )
 
-            # =================
-            # Output. [sq, b, h]
-            # =================
+
+        # =================
+        # Output. [sq, b, h]
+        # =================
 
         output = self.dense(context_layer)
 
@@ -287,40 +322,41 @@ class TopQuerySelfAttention(torch.nn.Module):
             query_layer = self.query(query_hidden_state)
             key_layer = self.key(hidden_states)
             value_layer = self.value(hidden_states)
+        
+        fallback = not hasattr(torch._C, 'fused_multi_head_attention_inference_v2')
 
-        if layer_past is not None:
-            past_key, past_value = layer_past
-            key_layer = torch.cat((past_key.type_as(key_layer),
-                                   key_layer), dim=0)
-            value_layer = torch.cat((past_value.type_as(value_layer),
-                                     value_layer), dim=0)
-        if get_key_value:
-            present = (key_layer, value_layer)
-
-        if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
-            if layer_past is not None:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.hidden_size_per_attention_head, 
-                        causal=False, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                ).transpose(0, 1)
+        if fallback:
+            if hasattr(torch._C, 'fused_codegeex_qkv_reshape'):
+                query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
             else:
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
-                        query=query_layer, 
-                        key=key_layer, 
-                        value=value_layer, 
-                        query_head_size=self.hidden_size_per_attention_head, 
-                        causal=True, 
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
-                ).transpose(0, 1)
-        else:
+                new_query_layer_shape = query_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                query_layer = query_layer.view(*new_query_layer_shape)
+
+                new_query_layer_shape = key_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                key_layer = key_layer.view(*new_query_layer_shape)
+
+                new_query_layer_shape = value_layer.size()[:-1] + \
+                                        (self.num_attention_heads,
+                                        self.hidden_size_per_attention_head)
+                value_layer = value_layer.view(*new_query_layer_shape)
+
+            # ==================================
+            # Adjust key and value for inference
+            # ==================================
+
+            if layer_past is not None:
+                past_key, past_value = layer_past
+                key_layer = torch.cat((past_key.type_as(key_layer),
+                                    key_layer), dim=0)
+                value_layer = torch.cat((past_value.type_as(value_layer),
+                                        value_layer), dim=0)
+            if get_key_value:
+                present = (key_layer, value_layer)
+
             # ===================================
             # Raw attention scores. [b, np, sq, sk]
             # ===================================
@@ -365,18 +401,11 @@ class TopQuerySelfAttention(torch.nn.Module):
 
             # attention scores and attention mask [b, np, sq, sk]
             # attention_scores = attention_mask_func(attention_scores, attention_mask)
-            if hasattr(torch._C, 'fused_scale_mask_softmax'):
-                attention_mask = ~attention_mask
-                if self.attention_softmax_in_fp32:
-                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores.float(), attention_mask, fill_value=-10000.0, scale=1.0).half()
-                else:
-                    attention_probs = torch._C.fused_scale_mask_softmax(attention_scores, attention_mask, fill_value=-10000.0, scale=1.0)
+            attention_scores = attention_scores - attention_mask * 10000.0
+            if self.attention_softmax_in_fp32:
+                attention_probs = self.softmax(attention_scores.float()).half()
             else:
-                attention_scores = attention_scores - attention_mask * 10000.0
-                if self.attention_softmax_in_fp32:
-                    attention_probs = self.softmax(attention_scores.float()).half()
-                else:
-                    attention_probs = self.softmax(attention_scores)
+                attention_probs = self.softmax(attention_scores)
                 
             # =========================
             # Context layer. [sq, b, hp]
@@ -412,9 +441,33 @@ class TopQuerySelfAttention(torch.nn.Module):
                                     (self.hidden_size,)
             context_layer = context_layer.view(*new_context_layer_shape)
 
-            # =================
-            # Output. [sq, b, h]
-            # =================
+        else:
+            if layer_past is not None:
+                past_key, past_value = layer_past
+                key_layer = torch.cat((past_key.type_as(key_layer),
+                                    key_layer), dim=0)
+                value_layer = torch.cat((past_value.type_as(value_layer),
+                                        value_layer), dim=0)
+            if get_key_value:
+                present = (key_layer, value_layer)
+
+            if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
+                context_layer = torch._C.fused_multi_head_attention_inference_v2(
+                        query=query_layer, 
+                        key=key_layer, 
+                        value=value_layer, 
+                        query_head_size=self.hidden_size_per_attention_head, 
+                        causal=True, 
+                        causal_diagonal_offset=key_layer.shape[0]-query_layer.shape[0],
+                        query_layout="MB(HK)",
+                        key_layout="MB(HK)",
+                        value_layout="MB(HK)",
+                        output_layout="MB(HK)",
+                )
+
+        # =================
+        # Output. [sq, b, h]
+        # =================
 
         output = self.dense(context_layer)
 

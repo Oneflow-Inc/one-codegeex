@@ -68,7 +68,7 @@ class QuantizedLinear(torch.nn.Module):
         self.weight_bit_width = weight_bit_width
         self.symmetric = True
         self.group_dim = 1
-        self.group_size = in_features // 64
+        self.group_size = in_features
 
         self.weight, self.weight_scale, self.weight_zero = _quantize(
             self.weight_bit_width, self.symmetric, weight, self.group_dim, self.group_size, torch.int8
