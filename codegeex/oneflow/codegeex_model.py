@@ -234,17 +234,18 @@ class SelfAttention(torch.nn.Module):
                                     (self.hidden_size,)
             context_layer = context_layer.view(*new_context_layer_shape)
         else:
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
             if layer_past is not None:
                 past_key, past_value = layer_past
                 key_layer, value_layer = torch._C.fused_attention_concat_past_key_value(
                     past_key=past_key,
-                    past_key_layout="MB(HK)",
+                    past_key_layout="MBHK",
                     past_value=past_value,
-                    past_value_layout="MB(HK)",
+                    past_value_layout="MBHK",
                     key=key_layer,
-                    key_layout="MB(HK)",
+                    key_layout="MBHK",
                     value=value_layer,
-                    value_layout="MB(HK)",
+                    value_layout="MBHK",
                     key_head_size=self.hidden_size_per_attention_head,
                 )
             if get_key_value:
@@ -257,9 +258,9 @@ class SelfAttention(torch.nn.Module):
                         query_head_size=self.hidden_size_per_attention_head, 
                         causal=True, 
                         causal_diagonal_offset=key_layer.shape[0]-query_layer.shape[0],
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
+                        query_layout="MBHK",
+                        key_layout="MBHK",
+                        value_layout="MBHK",
                         output_layout="MB(HK)",
                 )
 
@@ -449,33 +450,33 @@ class TopQuerySelfAttention(torch.nn.Module):
             context_layer = context_layer.view(*new_context_layer_shape)
 
         else:
+            query_layer, key_layer, value_layer = torch._C.fused_codegeex_qkv_reshape(query_layer, key_layer, value_layer, self.num_attention_heads)
             if layer_past is not None:
                 past_key, past_value = layer_past
                 key_layer, value_layer = torch._C.fused_attention_concat_past_key_value(
                     past_key=past_key,
-                    past_key_layout="MB(HK)",
+                    past_key_layout="MBHK",
                     past_value=past_value,
-                    past_value_layout="MB(HK)",
+                    past_value_layout="MBHK",
                     key=key_layer,
-                    key_layout="MB(HK)",
+                    key_layout="MBHK",
                     value=value_layer,
-                    value_layout="MB(HK)",
+                    value_layout="MBHK",
                     key_head_size=self.hidden_size_per_attention_head,
                 )
             if get_key_value:
                 present = (key_layer, value_layer)
-
-            if hasattr(torch._C, 'fused_multi_head_attention_inference_v2'):
-                context_layer = torch._C.fused_multi_head_attention_inference_v2(
+            
+            context_layer = torch._C.fused_multi_head_attention_inference_v2(
                         query=query_layer, 
                         key=key_layer, 
                         value=value_layer, 
                         query_head_size=self.hidden_size_per_attention_head, 
                         causal=True, 
                         causal_diagonal_offset=key_layer.shape[0]-query_layer.shape[0],
-                        query_layout="MB(HK)",
-                        key_layout="MB(HK)",
-                        value_layout="MB(HK)",
+                        query_layout="MBHK",
+                        key_layout="MBHK",
+                        value_layout="MBHK",
                         output_layout="MB(HK)",
                 )
 
