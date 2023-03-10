@@ -236,10 +236,17 @@ class SelfAttention(torch.nn.Module):
         else:
             if layer_past is not None:
                 past_key, past_value = layer_past
-                key_layer = torch.cat((past_key.type_as(key_layer),
-                                    key_layer), dim=0)
-                value_layer = torch.cat((past_value.type_as(value_layer),
-                                        value_layer), dim=0)
+                key_layer, value_layer = torch._C.fused_attention_concat_past_key_value(
+                    past_key=past_key,
+                    past_key_layout="MB(HK)",
+                    past_value=past_value,
+                    past_value_layout="MB(HK)",
+                    key=key_layer,
+                    key_layout="MB(HK)",
+                    value=value_layer,
+                    value_layout="MB(HK)",
+                    key_head_size=self.hidden_size_per_attention_head,
+                )
             if get_key_value:
                 present = (key_layer, value_layer)
             
@@ -444,10 +451,17 @@ class TopQuerySelfAttention(torch.nn.Module):
         else:
             if layer_past is not None:
                 past_key, past_value = layer_past
-                key_layer = torch.cat((past_key.type_as(key_layer),
-                                    key_layer), dim=0)
-                value_layer = torch.cat((past_value.type_as(value_layer),
-                                        value_layer), dim=0)
+                key_layer, value_layer = torch._C.fused_attention_concat_past_key_value(
+                    past_key=past_key,
+                    past_key_layout="MB(HK)",
+                    past_value=past_value,
+                    past_value_layout="MB(HK)",
+                    key=key_layer,
+                    key_layout="MB(HK)",
+                    value=value_layer,
+                    value_layout="MB(HK)",
+                    key_head_size=self.hidden_size_per_attention_head,
+                )
             if get_key_value:
                 present = (key_layer, value_layer)
 
